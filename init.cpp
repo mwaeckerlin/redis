@@ -82,13 +82,13 @@ int main(int argc, char *argv[]) try {
   conf += "appendfsync everysec\n";
   conf += "save " + save_policy + "\n";
   if (!password.empty()) conf += "requirepass " + password + "\n";
-  if (!maxmemory.empty()) {
-    conf += "maxmemory " + maxmemory + "\n";
-    // LRU is safe for Bayes / greylist / ratelimit — evicts least-used
-    // keys under memory pressure. For a pure cache workload change to
-    // allkeys-lru; leaving allkeys-lfu as sensible default.
-    conf += "maxmemory-policy " + env_or("REDIS_MAXMEMORY_POLICY", "allkeys-lfu") + "\n";
-  }
+  if (!maxmemory.empty()) conf += "maxmemory " + maxmemory + "\n";
+  // Always configured (the image ENV promises this default), even
+  // without a maxmemory limit — the policy only takes effect once a
+  // limit exists, which an operator may add at runtime via CONFIG SET.
+  // LFU evicts least-frequently-used keys under memory pressure, a
+  // safe choice for Bayes / greylist / ratelimit state.
+  conf += "maxmemory-policy " + env_or("REDIS_MAXMEMORY_POLICY", "allkeys-lfu") + "\n";
 
   std::ofstream out(CONF_PATH, std::ios::binary | std::ios::trunc);
   if (!out) throw std::runtime_error(std::string("cannot write ") + CONF_PATH);

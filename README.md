@@ -21,8 +21,8 @@ the RESP protocol on port 6379.
 | `REDIS_PASSWORD`        | *(empty)*                        | If set, `requirepass` is enabled and clients must `AUTH`. Recommended for shared / less-trusted networks.                                                                                       |
 | `REDIS_APPENDONLY`      | `yes`                            | Enable AOF persistence to `/data/appendonly.aof`. Recommended: `yes` — losing Bayes / greylist state on a container restart is painful (weeks of user training gone).                          |
 | `REDIS_SAVE`            | `3600 1 300 100 60 10000`        | RDB snapshot schedule (Redis default). Used alongside AOF for faster restarts.                                                                                                                 |
-| `REDIS_MAXMEMORY`       | *(empty)*                        | If set (e.g. `256mb`), enables the eviction policy below.                                                                                                                                       |
-| `REDIS_MAXMEMORY_POLICY`| `allkeys-lfu`                    | Only effective with `REDIS_MAXMEMORY`. `allkeys-lfu` fits the Bayes + greylist + ratelimit mix well: the least-frequently-used keys get evicted first, keeping hot state alive under pressure. |
+| `REDIS_MAXMEMORY`       | *(empty)*                        | Memory limit (e.g. `256mb`). Empty = unlimited.                                                                                                                                                 |
+| `REDIS_MAXMEMORY_POLICY`| `allkeys-lfu`                    | Always configured; takes effect once a memory limit exists (`REDIS_MAXMEMORY` or runtime `CONFIG SET maxmemory`). `allkeys-lfu` fits the Bayes + greylist + ratelimit mix: least-frequently-used keys are evicted first, keeping hot state alive under pressure. |
 
 ## Volumes to persist
 
@@ -42,6 +42,21 @@ If your primary consumer (e.g. `mwaeckerlin/rspamd`) needs to run
 diagnostics, install `redis-cli` there, or exec into the peer:
 
     docker compose exec rspamd rspamc stat   # queries Rspamd, which in turn hits Redis
+
+## Testing
+
+    npm test
+
+runs two suites and fails on any single error:
+
+1. **Image contract** (`tests/image-contract.sh`) — the image must be
+   headless: no `/bin/sh`, no bash, no busybox, no perl.
+2. **Functional e2e** (`tests/run.sh`, via `tests/docker-compose.yml`)
+   — PING, SET/GET, AOF persistence across a container restart,
+   `REDIS_PASSWORD` enforcement (NOAUTH without, PONG with), and the
+   `allkeys-lfu` default eviction policy. The official `redis:alpine`
+   image serves purely as the `redis-cli` client — the image under
+   test ships none on purpose.
 
 ## Image layout
 

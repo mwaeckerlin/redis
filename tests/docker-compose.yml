@@ -1,0 +1,44 @@
+# Functional test stack for mwaeckerlin/redis, driven by tests/run.sh.
+#
+# `redis` runs with defaults (AOF on, no password) and a data volume to
+# prove persistence across a restart. `redis-auth` runs with a password
+# to prove REDIS_PASSWORD is enforced. `cli` is the official redis
+# image used purely as a redis-cli client — the image under test ships
+# no client on purpose (headless).
+
+services:
+
+  redis:
+    image: mwaeckerlin/redis
+    volumes:
+      - data:/data
+    networks: [net]
+    healthcheck:
+      test: ["CMD", "/usr/bin/init", "--healthcheck"]
+      interval: 2s
+      timeout: 5s
+      retries: 20
+      start_period: 3s
+
+  redis-auth:
+    image: mwaeckerlin/redis
+    environment:
+      REDIS_PASSWORD: "e2e-test-password-12"
+    networks: [net]
+    healthcheck:
+      test: ["CMD", "/usr/bin/init", "--healthcheck"]
+      interval: 2s
+      timeout: 5s
+      retries: 20
+      start_period: 3s
+
+  cli:
+    image: redis:alpine
+    entrypoint: ["sleep", "infinity"]
+    networks: [net]
+
+networks:
+  net:
+
+volumes:
+  data:
