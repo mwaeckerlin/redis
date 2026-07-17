@@ -1,0 +1,12 @@
+# Standalone smoke test.
+services:
+  redis:
+    image: mwaeckerlin/redis
+    build: .
+    ports:
+      - "6379:6379"
+    volumes:
+      - data:/data
+
+volumes:
+  data:
