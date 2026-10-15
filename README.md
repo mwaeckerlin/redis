@@ -20,26 +20,34 @@ Every value is checked before `redis.conf` is written: the password takes printa
 
 ## Volumes to persist
 
-- `/data` — Redis RDB snapshots and (if `REDIS_APPENDONLY=yes`) the AOF log. **Persist this volume**: losing it wipes Bayes training, greylist whitelist state and any ratelimit windows.
+- `/data` — Redis RDB snapshots and (if `REDIS_APPENDONLY=yes`) the AOF log. **Persist this volume**: losing it wipes Bayes training, greylist whitelist state and any ratelimit windows. The server runs as user `redis`, uid 102; a host directory or a pre-filled volume belongs to that uid.
+
+## Health check
+
+The image carries a `HEALTHCHECK` (every 30s, timeout 5s, three retries): `/usr/bin/init --healthcheck` sends `AUTH` with `REDIS_PASSWORD` when one is set, then `PING`, and reports healthy only on `PONG`. A compose file or a Swarm stack therefore needs no healthcheck of its own; `depends_on: condition: service_healthy` works as it is. To check by hand:
+
+```bash
+docker compose exec redis /usr/bin/init --healthcheck
+```
 
 ## Client access from a peer container
 
 The container carries neither `redis-cli` nor a shell, so the client runs in another container or on the host:
 
 ```bash
-$ docker run --rm --network <your-net> redis:alpine redis-cli -h redis ping
+docker run --rm --network <your-net> redis:alpine redis-cli -h redis ping
 ```
 
 If your primary consumer (e.g. `mwaeckerlin/rspamd`) needs to run diagnostics, install `redis-cli` there, or exec into the peer:
 
 ```bash
-$ docker compose exec rspamd rspamc stat   # queries Rspamd, which in turn hits Redis
+docker compose exec rspamd rspamc stat   # queries Rspamd, which in turn hits Redis
 ```
 
 ## Testing
 
 ```bash
-$ npm test
+npm test
 ```
 
 runs four suites and fails on any single error:
@@ -47,7 +55,7 @@ runs four suites and fails on any single error:
 1. **Docs contract** (`tests/docs-contract.sh`) — every feature of [FEATURES.md](FEATURES.md) has a test in [TESTS.md](TESTS.md).
 2. **Image contract** (`tests/image-contract.sh`) — the image must be headless: no `/bin/sh`, no bash, no busybox, no perl.
 3. **Config validation** (`tests/config-validation.sh`) — every malformed value is refused, every valid one accepted.
-4. **Functional e2e** (`tests/run.sh`, via `tests/docker-compose.yml`)&nbsp;— PING, SET/GET, AOF persistence across a container restart, `REDIS_PASSWORD` enforcement (NOAUTH without, PONG with), and the `allkeys-lfu` default eviction policy. The official `redis:alpine` image serves purely as the `redis-cli` client — the image under test ships none on purpose.
+4. **Functional e2e** (`tests/run.sh`, via `tests/docker-compose.yml`)&nbsp;— PING, SET/GET, AOF persistence across a container restart, `REDIS_PASSWORD` enforcement (NOAUTH without, PONG with), the `allkeys-lfu` default eviction policy, the image's health check (healthy without a compose healthcheck, refused with a wrong password and against a port nobody serves) and the uid 102 of the user `redis`. The official `redis:alpine` image serves purely as the `redis-cli` client — the image under test ships none on purpose.
 
 ## Image layout
 

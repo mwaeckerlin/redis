@@ -17,9 +17,9 @@ Behaviour:
      not lose Bayes / greylist / ratelimit state.
   3. execv redis-server -c /run/redis/redis.conf --dir /data.
 
-Supports --healthcheck: TCP-probes the configured port on 127.0.0.1.
-No redis-cli or auth needed — a successful TCP connect proves the
-server accepted our socket.
+Supports --healthcheck: sends AUTH (when REDIS_PASSWORD is set) and
+PING to the configured port on 127.0.0.1 and exits 0 only on +PONG.
+The image's HEALTHCHECK runs it, so no redis-cli is needed.
 
 */
 
@@ -35,6 +35,7 @@ server accepted our socket.
 #include <stdexcept>
 #include <string>
 #include <sys/socket.h>
+#include <sys/time.h>
 #include <unistd.h>
 #include <vector>
 
@@ -138,17 +139,56 @@ check(const char *name, const std::string &value, bool (*valid)(const std::strin
     throw std::runtime_error(std::string("invalid ") + name + ": the value cannot be used in redis.conf");
 }
 
+std::string
+resp(const std::vector<std::string> &command) {
+  std::string out = "*" + std::to_string(command.size()) + "\r\n";
+  for (const auto &arg : command) out += "$" + std::to_string(arg.size()) + "\r\n" + arg + "\r\n";
+  return out;
+}
+
+// A TCP connect only proves that the socket accepts: a server still loading
+// its AOF, or a password that no longer matches, accept it as well. The check
+// therefore sends AUTH (when a password is set) and PING, and passes only on
+// the reply +PONG.
 int
-tcp_probe(int port) {
+ping_probe(int port, const std::string &password) {
   int s = socket(AF_INET, SOCK_STREAM, 0);
   if (s < 0) return 1;
+  timeval timeout{3, 0};
+  setsockopt(s, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof timeout);
+  setsockopt(s, SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof timeout);
   sockaddr_in addr{};
   addr.sin_family = AF_INET;
   addr.sin_port = htons(port);
   inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr);
-  int rc = connect(s, reinterpret_cast<sockaddr *>(&addr), sizeof addr);
+  if (connect(s, reinterpret_cast<sockaddr *>(&addr), sizeof addr) != 0) {
+    close(s);
+    return 1;
+  }
+  std::string request = password.empty() ? std::string() : resp({"AUTH", password});
+  request += resp({"PING"});
+  const std::size_t replies = password.empty() ? 1 : 2;
+  if (send(s, request.data(), request.size(), MSG_NOSIGNAL) != static_cast<ssize_t>(request.size())) {
+    close(s);
+    return 1;
+  }
+  std::string answer;
+  char buffer[256];
+  std::size_t lines = 0;
+  while (lines < replies) {
+    const ssize_t n = recv(s, buffer, sizeof buffer, 0);
+    if (n <= 0) break;
+    answer.append(buffer, static_cast<std::size_t>(n));
+    lines = 0;
+    for (std::size_t at = answer.find("\r\n"); at != std::string::npos; at = answer.find("\r\n", at + 2)) ++lines;
+  }
   close(s);
-  return rc == 0 ? 0 : 1;
+  const std::string pong = "+PONG\r\n";
+  if (answer.size() < pong.size() || answer.compare(answer.size() - pong.size(), pong.size(), pong) != 0) {
+    std::cerr << "health check: no PONG from redis on port " << port << std::endl;
+    return 1;
+  }
+  return 0;
 }
 
 } // namespace
@@ -174,7 +214,7 @@ int main(int argc, char *argv[]) try {
   const int port = std::stoi(port_value);
 
   if (argc > 1 && std::string(argv[1]) == "--healthcheck")
-    return tcp_probe(port);
+    return ping_probe(port, password);
 
   std::string conf;
   conf += "bind " + bind + "\n";

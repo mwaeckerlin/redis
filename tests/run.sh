@@ -31,6 +31,7 @@ _wait_ping() {
 
 echo "==> Starting test stack..."
 docker compose -f "$COMPOSE" up -d --wait redis redis-auth cli
+docker compose -f "$COMPOSE" up -d redis-plain
 
 # 1. liveness
 if [[ "$(_cli -h redis ping)" == "PONG" ]]; then
@@ -74,6 +75,48 @@ if _cli -h redis config get maxmemory-policy | grep -q "allkeys-lfu"; then
     _pass "maxmemory_policy_default"
 else
     _fail "maxmemory_policy_default" "expected allkeys-lfu from image default"
+fi
+
+# 6. the image checks its own health: Docker reports it healthy from the
+# HEALTHCHECK of the image, without one in the compose file
+_health() { docker inspect --format '{{.State.Health.Status}}' "$(docker compose -f "$COMPOSE" ps -q "$1")" 2>/dev/null || true; }
+STATE=""
+for _ in $(seq 1 30); do
+    STATE="$(_health redis-plain)"
+    [[ "$STATE" == "healthy" ]] && break
+    sleep 1
+done
+if [[ "$STATE" == "healthy" ]]; then
+    _pass "image_healthcheck_healthy"
+else
+    _fail "image_healthcheck_healthy" "health state «${STATE}», expected healthy from the image's own HEALTHCHECK"
+fi
+
+# ...and the check is a PING answered with PONG, not a bare TCP connect: with a
+# wrong password the server still accepts the connection and refuses the PING
+if docker compose -f "$COMPOSE" exec -T -e REDIS_PASSWORD=wrong-password-12 redis-auth /usr/bin/init --healthcheck; then
+    _fail "healthcheck_refuses_wrong_password" "the check passed with a wrong password"
+else
+    _pass "healthcheck_refuses_wrong_password"
+fi
+if docker compose -f "$COMPOSE" exec -T redis-auth /usr/bin/init --healthcheck; then
+    _pass "healthcheck_with_password"
+else
+    _fail "healthcheck_with_password" "the check failed with the container's own password"
+fi
+if docker compose -f "$COMPOSE" exec -T -e REDIS_PORT=6390 redis /usr/bin/init --healthcheck; then
+    _fail "healthcheck_refuses_closed_port" "the check passed against a port nobody serves"
+else
+    _pass "healthcheck_refuses_closed_port"
+fi
+
+# 7. the user the server runs as: deployments give /data to this uid
+PASSWD="$(docker compose -f "$COMPOSE" cp redis:/etc/passwd - | tar -xO)"
+REDIS_UID="$(awk -F: '$1 == "redis" { print $3 }' <<< "$PASSWD")"
+if [[ "$REDIS_UID" == "102" ]]; then
+    _pass "redis_user_uid_102"
+else
+    _fail "redis_user_uid_102" "the user redis has uid «${REDIS_UID}»"
 fi
 
 echo ""

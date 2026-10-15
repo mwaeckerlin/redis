@@ -8,4 +8,6 @@ Numbered register of every feature; a number is never reused. Every feature is c
 - **F4 — Memory limit and eviction.** `REDIS_MAXMEMORY` limits the memory (empty: no limit); `REDIS_MAXMEMORY_POLICY` (default `allkeys-lfu`) decides what is evicted once a limit is reached.
 - **F5 — Validated configuration.** Every variable is checked against what its directive accepts before `redis.conf` is written; a malformed value, above all one with a line break that would add directives of its own, stops the container with `invalid <VARIABLE>`.
 - **F6 — Headless.** Only `redis-server`, its libraries and the start program are in the image: no shell, no `redis-cli`, no package manager.
+- **F8 — Health check in the image.** The image carries a `HEALTHCHECK`: `/usr/bin/init --healthcheck` sends `AUTH` (when `REDIS_PASSWORD` is set) and `PING` to `127.0.0.1:REDIS_PORT` and reports healthy only on the reply `PONG`. A wrong password or a port nobody serves reports unhealthy. A compose file or a Swarm stack needs no healthcheck of its own.
+- **F9 — Fixed user.** The server runs as user `redis`, uid 102, so a deployment can hand `/data` to that uid.
 - **F7 — Published for amd64 and arm64.** Every push builds the image natively for both architectures and publishes it under one tag on Docker Hub, with the reusable workflow of `mwaeckerlin/scratch`.

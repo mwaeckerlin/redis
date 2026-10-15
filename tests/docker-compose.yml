@@ -32,6 +32,11 @@ services:
       retries: 20
       start_period: 3s
 
+  # no healthcheck of its own: Docker takes the HEALTHCHECK of the image
+  redis-plain:
+    image: mwaeckerlin/redis
+    networks: [net]
+
   cli:
     image: redis:alpine
     entrypoint: ["sleep", "infinity"]

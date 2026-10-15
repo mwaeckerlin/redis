@@ -1,5 +1,9 @@
 # Changelog
 
+- 2026-10-15 **1.0.2**
+    - The image reports its health itself: Docker and Swarm show it healthy only when Redis answers `PING` with `PONG`, with the configured password; a wrong password or a server that does not answer shows unhealthy
+    - The server user `redis` has uid 102, documented for the permissions of `/data`
+
 - 2026-09-26 **1.0.1**
     - Security: every configuration value from the environment is now validated before it is written into the server configuration; a malformed value, above all a line break in the password that would add directives of its own, stops the container with a clear `invalid <VARIABLE>` error
     - The image is published for amd64 and arm64 under one tag, built and published automatically on every change and every week

@@ -35,5 +35,7 @@ ENV CONTAINERNAME="redis" \
 EXPOSE 6379
 VOLUME /data
 USER redis
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD ["/usr/bin/init", "--healthcheck"]
 ENTRYPOINT ["/usr/bin/init"]
 COPY --from=build /root/ /
