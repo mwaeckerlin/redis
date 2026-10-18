@@ -37,6 +37,26 @@ services:
     image: mwaeckerlin/redis
     networks: [net]
 
+  # the snapshot of the official image: rdb-writer is the current
+  # redis:latest and writes /data/dump.rdb, redis-rdb is the image under test
+  # with the settings of the Authentik stack and loads it from the same volume
+  rdb-writer:
+    image: redis:latest
+    user: "102:102"
+    command: ["redis-server", "--save", "", "--appendonly", "no", "--dir", "/data"]
+    volumes:
+      - rdbdata:/data
+    networks: [net]
+
+  redis-rdb:
+    image: mwaeckerlin/redis
+    environment:
+      REDIS_SAVE: "60 1"
+      REDIS_APPENDONLY: "no"
+    volumes:
+      - rdbdata:/data
+    networks: [net]
+
   cli:
     image: redis:alpine
     entrypoint: ["sleep", "infinity"]
@@ -47,3 +67,4 @@ networks:
 
 volumes:
   data:
+  rdbdata:

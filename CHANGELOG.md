@@ -1,5 +1,8 @@
 # Changelog
 
+- 2026-10-18 **1.0.3**
+    - Snapshots that the current official `redis:latest` writes are loaded: the server now comes from the official `redis:alpine` release, where the Alpine package (8.8.0) refused «RDB format version 15»; the weekly rebuild takes each new release with it
+
 - 2026-10-15 **1.0.2**
     - The image reports its health itself: Docker and Swarm show it healthy only when Redis answers `PING` with `PONG`, with the configured password; a wrong password or a server that does not answer shows unhealthy
     - The server user `redis` has uid 102, documented for the permissions of `/data`

@@ -9,6 +9,7 @@ Register of all tests, sorted by the [FEATURES.md](FEATURES.md) number each test
 - **F3** `tests/run.sh` › auth_required_without_password, auth_with_password — a command without `AUTH` is refused, the password works.
 - **F4** `tests/run.sh` › maxmemory_policy_default — the eviction policy `allkeys-lfu` reaches the server.
 - **F8** `tests/run.sh` › image_healthcheck_healthy, healthcheck_with_password, healthcheck_refuses_wrong_password, healthcheck_refuses_closed_port — a service without a compose healthcheck turns healthy from the image's `HEALTHCHECK`; the check passes with the container's password and fails with a wrong one and against a port nobody serves (regression: a bare TCP connect passed with a wrong password).
+- **F10** `tests/run.sh` › loads_snapshot_of_redis_latest — `redis:latest` writes `dump.rdb` into a volume, and the image under test, with `REDIS_SAVE="60 1"` and `REDIS_APPENDONLY=no`, starts on it and returns the stored value (regression: Redis 8.8.0 from the Alpine package stopped with «Can't handle RDB format version 15»).
 - **F9** `tests/run.sh` › redis_user_uid_102 — `/etc/passwd` of the image gives the user `redis` uid 102.
 
 ## Config validation (`tests/config-validation.sh`)

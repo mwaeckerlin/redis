@@ -55,12 +55,12 @@ runs four suites and fails on any single error:
 1. **Docs contract** (`tests/docs-contract.sh`) — every feature of [FEATURES.md](FEATURES.md) has a test in [TESTS.md](TESTS.md).
 2. **Image contract** (`tests/image-contract.sh`) — the image must be headless: no `/bin/sh`, no bash, no busybox, no perl.
 3. **Config validation** (`tests/config-validation.sh`) — every malformed value is refused, every valid one accepted.
-4. **Functional e2e** (`tests/run.sh`, via `tests/docker-compose.yml`)&nbsp;— PING, SET/GET, AOF persistence across a container restart, `REDIS_PASSWORD` enforcement (NOAUTH without, PONG with), the `allkeys-lfu` default eviction policy, the image's health check (healthy without a compose healthcheck, refused with a wrong password and against a port nobody serves) and the uid 102 of the user `redis`. The official `redis:alpine` image serves purely as the `redis-cli` client — the image under test ships none on purpose.
+4. **Functional e2e** (`tests/run.sh`, via `tests/docker-compose.yml`)&nbsp;— PING, SET/GET, AOF persistence across a container restart, `REDIS_PASSWORD` enforcement (NOAUTH without, PONG with), the `allkeys-lfu` default eviction policy, the image's health check (healthy without a compose healthcheck, refused with a wrong password and against a port nobody serves) the uid 102 of the user `redis`, and that a `dump.rdb` written by the current `redis:latest` loads. The official `redis:alpine` image serves purely as the `redis-cli` client — the image under test ships none on purpose.
 
 ## Image layout
 
 The image is built in the same stages as `mwaeckerlin/nginx`, `mwaeckerlin/php-fpm`, `mwaeckerlin/opendkim`, `mwaeckerlin/opendmarc` and `mwaeckerlin/rspamd`:
 
 1. **`init`** — compiles `init.cpp` statically with `g++ -static -Os -flto`. The resulting binary reads env, composes `/run/redis/redis.conf` and `execv`s `redis-server`.
-2. **`build`** — installs `redis` on the Alpine base, then uses `tar cph … + ldd` to collect only `redis-server` and its `.so` dependencies into `/root/`.
+2. **`build`** — creates the user `redis` (uid 102), `/data` and `/run/redis` on the Alpine base and takes `redis-server` with its `.so` dependencies from the stage `server`: `FROM redis:alpine`, the official release that `redis:latest` also carries, built on musl. The Alpine package lags behind the official release and cannot load the snapshots a current `redis:latest` writes; the weekly rebuild takes each new release.
 3. **runtime** — `FROM mwaeckerlin/scratch`, `COPY --from=build /root/ /`. Runtime image is a few MB. `ENTRYPOINT ["/usr/bin/init"]`.

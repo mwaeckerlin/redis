@@ -119,6 +119,25 @@ else
     _fail "redis_user_uid_102" "the user redis has uid «${REDIS_UID}»"
 fi
 
+# 8. a snapshot that the current official redis:latest writes is loaded: the
+# image under test creates the volume (owned by uid 102), the official image
+# writes dump.rdb into it as the same uid, the image under test loads it
+# (regression: Redis 8.8.0 refused «RDB format version 15» from redis:latest)
+docker compose -f "$COMPOSE" up -d --wait redis-rdb > /dev/null
+docker compose -f "$COMPOSE" stop redis-rdb > /dev/null 2>&1
+docker compose -f "$COMPOSE" up -d rdb-writer > /dev/null
+_wait_ping rdb-writer || true
+WRITER_VERSION="$(_cli -h rdb-writer info server | tr -d '\r' | awk -F: '$1 == "redis_version" { print $2 }')"
+_cli -h rdb-writer set rdb-key rdb-value > /dev/null
+_cli -h rdb-writer save > /dev/null
+docker compose -f "$COMPOSE" stop rdb-writer > /dev/null 2>&1
+docker compose -f "$COMPOSE" start redis-rdb > /dev/null 2>&1
+if _wait_ping redis-rdb && [[ "$(_cli -h redis-rdb get rdb-key)" == "rdb-value" ]]; then
+    _pass "loads_snapshot_of_redis_latest"
+else
+    _fail "loads_snapshot_of_redis_latest" "snapshot of redis:latest ${WRITER_VERSION} not loaded: $(docker compose -f "$COMPOSE" logs --no-color --tail 5 redis-rdb 2>&1)"
+fi
+
 echo ""
 echo "==> Functional results: ${PASS} passed, ${FAIL} failed"
 [[ ${FAIL} -eq 0 ]] || exit 1
