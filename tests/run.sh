@@ -5,6 +5,10 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 COMPOSE="tests/docker-compose.yml"
+# the content of the secret redis_password, with the line break a secret file
+# usually ends in
+export E2E_REDIS_PASSWORD=$'e2e-file-password-12\n'
+export E2E_REDIS_EMPTY_PASSWORD=$'\n'
 
 cleanup() {
     docker compose -f "$COMPOSE" down -v --remove-orphans 2>/dev/null || true
@@ -31,7 +35,7 @@ _wait_ping() {
 
 echo "==> Starting test stack..."
 docker compose -f "$COMPOSE" up -d --wait redis redis-auth cli
-docker compose -f "$COMPOSE" up -d redis-plain
+docker compose -f "$COMPOSE" up -d redis-plain redis-secret
 
 # 1. liveness
 if [[ "$(_cli -h redis ping)" == "PONG" ]]; then
@@ -70,6 +74,37 @@ else
     _fail "auth_with_password" "PING with correct password failed"
 fi
 
+# 4b. REDIS_PASSWORD_FILE: the password comes from the secret file, without
+# its final line break
+_wait_ping_auth() {
+    local host="$1" password="$2" tries=30
+    while (( tries-- > 0 )); do
+        if [[ "$(_cli -h "$host" -a "$password" --no-auth-warning ping 2>/dev/null || true)" == "PONG" ]]; then
+            return 0
+        fi
+        sleep 1
+    done
+    return 1
+}
+if _wait_ping_auth redis-secret e2e-file-password-12; then
+    _pass "auth_with_password_file"
+else
+    _fail "auth_with_password_file" "PING with the password of the secret file failed: $(docker compose -f "$COMPOSE" logs --no-color --tail 5 redis-secret 2>&1)"
+fi
+if _cli -h redis-secret get e2e-key 2>&1 | grep -q "NOAUTH"; then
+    _pass "password_file_required_without_password"
+else
+    _fail "password_file_required_without_password" "server with REDIS_PASSWORD_FILE accepted a command without AUTH"
+fi
+
+# ...and a secret with nothing but a line break stops the container
+EMPTY_OUT="$(docker compose -f "$COMPOSE" --profile empty-secret run --rm --no-deps redis-secret-empty --healthcheck 2>&1 || true)"
+if [[ "$EMPTY_OUT" == *"invalid REDIS_PASSWORD_FILE: /run/secrets/redis_password_empty is empty"* ]]; then
+    _pass "reject_empty_password_file"
+else
+    _fail "reject_empty_password_file" "expected «is empty»: ${EMPTY_OUT}"
+fi
+
 # 5. eviction policy from env default reaches the server config
 if _cli -h redis config get maxmemory-policy | grep -q "allkeys-lfu"; then
     _pass "maxmemory_policy_default"
@@ -104,6 +139,17 @@ if docker compose -f "$COMPOSE" exec -T redis-auth /usr/bin/init --healthcheck; 
 else
     _fail "healthcheck_with_password" "the check failed with the container's own password"
 fi
+STATE=""
+for _ in $(seq 1 60); do
+    STATE="$(_health redis-secret)"
+    [[ "$STATE" == "healthy" ]] && break
+    sleep 1
+done
+if [[ "$STATE" == "healthy" ]]; then
+    _pass "healthcheck_with_password_file"
+else
+    _fail "healthcheck_with_password_file" "health state «${STATE}», expected healthy with the password of REDIS_PASSWORD_FILE"
+fi
 if docker compose -f "$COMPOSE" exec -T -e REDIS_PORT=6390 redis /usr/bin/init --healthcheck; then
     _fail "healthcheck_refuses_closed_port" "the check passed against a port nobody serves"
 else
@@ -136,6 +182,15 @@ if _wait_ping redis-rdb && [[ "$(_cli -h redis-rdb get rdb-key)" == "rdb-value" 
     _pass "loads_snapshot_of_redis_latest"
 else
     _fail "loads_snapshot_of_redis_latest" "snapshot of redis:latest ${WRITER_VERSION} not loaded: $(docker compose -f "$COMPOSE" logs --no-color --tail 5 redis-rdb 2>&1)"
+fi
+
+# 9. the server is the release of the official redis:alpine
+SERVER_VERSION="$(_cli -h redis info server | tr -d '\r' | awk -F: '$1 == "redis_version" { print $2 }')"
+OFFICIAL_VERSION="$(docker compose -f "$COMPOSE" exec -T cli redis-server --version | sed -n 's/.* v=\([^ ]*\) .*/\1/p')"
+if [[ -n "$SERVER_VERSION" && "$SERVER_VERSION" == "$OFFICIAL_VERSION" ]]; then
+    _pass "server_is_release_of_redis_alpine"
+else
+    _fail "server_is_release_of_redis_alpine" "server ${SERVER_VERSION}, redis:alpine ${OFFICIAL_VERSION}"
 fi
 
 echo ""

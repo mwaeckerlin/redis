@@ -1,5 +1,12 @@
 # Changelog
 
+- 2026-11-19 **1.0.5**
+    - `REDIS_PASSWORD_FILE` reads the password from a file, such as a Docker secret, at the start and for the health check; the line break at the end of the file is not part of the password
+    - Redis 8.10.3, the current release of the official `redis:alpine`
+
+- 2026-10-19 **1.0.4**
+    - `BIND_ADDRESS` limits the port that the compose file of this repository publishes to one address of the host, `127.0.0.1` for the local machine alone; without it the port stays on every address, IPv4 and IPv6, as before
+
 - 2026-10-18 **1.0.3**
     - Snapshots that the current official `redis:latest` writes are loaded: the server now comes from the official `redis:alpine` release, where the Alpine package (8.8.0) refused «RDB format version 15»; the weekly rebuild takes each new release with it
 

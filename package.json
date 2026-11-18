@@ -1,15 +1,17 @@
 {
   "name": "@mwaeckerlin/redis",
-  "version": "1.0.3",
+  "version": "1.0.5",
   "scripts": {
     "build": "docker compose build",
+    "build:doc": "plantuml -tsvg ARCHITECTURE.md",
     "start": "docker compose up --build --force-recreate --remove-orphans",
     "start:daemon": "docker compose up -d --build --force-recreate --remove-orphans",
     "start:dev": "docker compose up --build --force-recreate --remove-orphans",
     "stop": "docker compose down",
     "deploy": "docker compose push",
-    "test": "npm run test:docs && npm run test:image && npm run test:config && npm run test:e2e",
+    "test": "npm run test:docs && npm run test:compose && npm run test:image && npm run test:config && npm run test:e2e",
     "test:docs": "bash tests/docs-contract.sh",
+    "test:compose": "bash tests/compose-contract.sh",
     "test:image": "npm run build && bash tests/image-contract.sh mwaeckerlin/redis",
     "test:config": "bash tests/config-validation.sh mwaeckerlin/redis",
     "test:e2e": "bash tests/run.sh"

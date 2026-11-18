@@ -4,4 +4,4 @@ One line per task, newest on top: date, status, who asked. An entry is removed w
 
 ## Maintainer orders
 
-Nothing open.
+- 2026-10-30, open, decision of Marc: the stage `server` is `FROM redis:alpine`, a foreign base image in a build stage, because the Alpine package cannot load the snapshots of `redis:latest` (F10)

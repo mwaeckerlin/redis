@@ -32,6 +32,28 @@ services:
       retries: 20
       start_period: 3s
 
+  # the password as a Docker secret: compose copies the content of
+  # E2E_REDIS_PASSWORD, which tests/run.sh sets with a line break at its end,
+  # into /run/secrets/redis_password; the image's HEALTHCHECK reads it too
+  redis-secret:
+    image: mwaeckerlin/redis
+    environment:
+      REDIS_PASSWORD_FILE: /run/secrets/redis_password
+    secrets:
+      - redis_password
+    networks: [net]
+
+  # a secret that holds nothing but a line break: started by tests/run.sh
+  # with `run`, it has to stop with «is empty»
+  redis-secret-empty:
+    image: mwaeckerlin/redis
+    profiles: [empty-secret]
+    environment:
+      REDIS_PASSWORD_FILE: /run/secrets/redis_password_empty
+    secrets:
+      - redis_password_empty
+    networks: [net]
+
   # no healthcheck of its own: Docker takes the HEALTHCHECK of the image
   redis-plain:
     image: mwaeckerlin/redis
@@ -61,6 +83,12 @@ services:
     image: redis:alpine
     entrypoint: ["sleep", "infinity"]
     networks: [net]
+
+secrets:
+  redis_password:
+    environment: E2E_REDIS_PASSWORD
+  redis_password_empty:
+    environment: E2E_REDIS_EMPTY_PASSWORD
 
 networks:
   net:

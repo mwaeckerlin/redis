@@ -80,6 +80,20 @@ _reject save_bad              REDIS_SAVE             "3600 one"
 _reject maxmemory_bad         REDIS_MAXMEMORY        "lots"
 _reject maxmemory_injection   REDIS_MAXMEMORY        $'256mb\nmaxclients 1'
 _reject policy_unknown        REDIS_MAXMEMORY_POLICY "evict-everything"
+_reject password_file_missing REDIS_PASSWORD_FILE    "/run/secrets/none"
+_reject password_file_content REDIS_PASSWORD_FILE    "/etc/nsswitch.conf"
+_reject password_file_directory REDIS_PASSWORD_FILE  "/data"
+_reject password_file_device  REDIS_PASSWORD_FILE    "/dev/zero"
+
+# REDIS_PASSWORD and REDIS_PASSWORD_FILE exclude each other
+OUT=$(timeout 30 docker run --rm --pull=never --network none \
+          -e REDIS_PASSWORD=e2e-test-password-12 -e REDIS_PASSWORD_FILE=/dev/null \
+          "${IMAGE}" --healthcheck 2>&1)
+if [[ "${OUT}" == *"invalid REDIS_PASSWORD_FILE: REDIS_PASSWORD is set as well"* ]]; then
+    _pass "reject_password_and_password_file"
+else
+    _fail "reject_password_and_password_file" "both variables accepted: ${OUT}"
+fi
 
 _accept defaults
 _accept explicit_values \

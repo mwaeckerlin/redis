@@ -9,15 +9,16 @@ busybox — only redis-server, its shared libraries, and this init.
 
 Behaviour:
 
-  1. Read the handful of env knobs (bind, port, password, maxmemory,
-     appendonly, save, eviction policy) and refuse any value its
-     directive does not accept, with `invalid <VAR>`.
+  1. Read the handful of env knobs (bind, port, password or password
+     file, maxmemory, appendonly, save, eviction policy) and refuse any
+     value its directive does not accept, with `invalid <VAR>`.
   2. Compose /run/redis/redis.conf. Persistence defaults to appendonly
      (writes an AOF file to /data), so that a container restart does
      not lose Bayes / greylist / ratelimit state.
   3. execv redis-server -c /run/redis/redis.conf --dir /data.
 
-Supports --healthcheck: sends AUTH (when REDIS_PASSWORD is set) and
+Supports --healthcheck: sends AUTH (when REDIS_PASSWORD or
+REDIS_PASSWORD_FILE is set) and
 PING to the configured port on 127.0.0.1 and exits 0 only on +PONG.
 The image's HEALTHCHECK runs it, so no redis-cli is needed.
 
@@ -31,10 +32,12 @@ The image's HEALTHCHECK runs it, so no redis-cli is needed.
 #include <exception>
 #include <fstream>
 #include <iostream>
+#include <iterator>
 #include <netinet/in.h>
 #include <stdexcept>
 #include <string>
 #include <sys/socket.h>
+#include <sys/stat.h>
 #include <sys/time.h>
 #include <unistd.h>
 #include <vector>
@@ -139,6 +142,49 @@ check(const char *name, const std::string &value, bool (*valid)(const std::strin
     throw std::runtime_error(std::string("invalid ") + name + ": the value cannot be used in redis.conf");
 }
 
+// REDIS_PASSWORD_FILE names a file that holds the password, such as a Docker
+// secret under /run/secrets. The line break at its end is not part of the
+// password; the content passes the same check as REDIS_PASSWORD.
+std::string
+password_from_env() {
+  const std::string password = env_or("REDIS_PASSWORD");
+  const std::string file = env_or("REDIS_PASSWORD_FILE");
+  if (file.empty()) {
+    check("REDIS_PASSWORD", password, valid_password);
+    return password;
+  }
+  if (!password.empty())
+    throw std::runtime_error("invalid REDIS_PASSWORD_FILE: REDIS_PASSWORD is set as well, set only one of them");
+  // a directory, a device such as /dev/zero or a FIFO is no password file
+  struct stat info{};
+  if (stat(file.c_str(), &info) != 0) {
+    const int error = errno;
+    throw std::runtime_error("invalid REDIS_PASSWORD_FILE: cannot read " + file + ": " + std::strerror(error));
+  }
+  if (!S_ISREG(info.st_mode))
+    throw std::runtime_error("invalid REDIS_PASSWORD_FILE: " + file + " is not a regular file");
+  std::ifstream in(file, std::ios::binary);
+  if (!in) {
+    const int error = errno;
+    throw std::runtime_error("invalid REDIS_PASSWORD_FILE: cannot read " + file + ": " + std::strerror(error));
+  }
+  std::string content;
+  try {
+    content.assign(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
+  } catch (const std::exception &e) {
+    throw std::runtime_error("invalid REDIS_PASSWORD_FILE: cannot read " + file + ": " + e.what());
+  }
+  if (in.bad())
+    throw std::runtime_error("invalid REDIS_PASSWORD_FILE: cannot read " + file);
+  while (!content.empty() && (content.back() == '\n' || content.back() == '\r')) content.pop_back();
+  if (content.empty())
+    throw std::runtime_error("invalid REDIS_PASSWORD_FILE: " + file + " is empty");
+  if (!valid_password(content))
+    throw std::runtime_error("invalid REDIS_PASSWORD_FILE: the password in " + file
+                             + " cannot be used in redis.conf: it takes printable characters without space, quotes and backslash");
+  return content;
+}
+
 std::string
 resp(const std::vector<std::string> &command) {
   std::string out = "*" + std::to_string(command.size()) + "\r\n";
@@ -196,7 +242,6 @@ ping_probe(int port, const std::string &password) {
 int main(int argc, char *argv[]) try {
   const std::string port_value  = env_or("REDIS_PORT",         "6379");
   const std::string bind        = env_or("REDIS_BIND",         "0.0.0.0");
-  const std::string password    = env_or("REDIS_PASSWORD",     "");
   const std::string maxmemory   = env_or("REDIS_MAXMEMORY",    "");
   const std::string appendonly  = env_or("REDIS_APPENDONLY",   "yes");
   const std::string save_policy = env_or("REDIS_SAVE",         "3600 1 300 100 60 10000");
@@ -206,7 +251,7 @@ int main(int argc, char *argv[]) try {
   // up in the health state and can be tested without starting the server
   check("REDIS_PORT", port_value, valid_port);
   check("REDIS_BIND", bind, valid_bind);
-  check("REDIS_PASSWORD", password, valid_password);
+  const std::string password = password_from_env();
   check("REDIS_MAXMEMORY", maxmemory, valid_memory);
   check("REDIS_APPENDONLY", appendonly, [](const std::string &v) { return v == "yes" || v == "no"; });
   check("REDIS_SAVE", save_policy, valid_save);
